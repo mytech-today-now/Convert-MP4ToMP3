@@ -99,13 +99,15 @@
     irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex
 
     # With parameters - pass arguments after the pipe
-    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -DryRun
-    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Overwrite
     irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Verbose
-    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Debug
-    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -OutputBitrate 320k
+
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -DryRun
+
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Overwrite
+
     irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Recurse
-    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -MaxParallelJobs 4
+
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -OutputBitrate 320k
 
     # With explicit directory parameter
     irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Directory "C:\Users\$env:USERNAME\Videos"
@@ -211,7 +213,7 @@ $Script:ScriptName = [System.IO.Path]::GetFileNameWithoutExtension($Script:Scrip
 $Script:Version = '1.0.0'
 
 # -------------------------------------------------------------------------------------------------
-# ROOT (uses %HOMEDRIVE% instead of %ROOT%)
+# ROOT (uses %HOMEDRIVE% instead of $env:HOMEDRIVE)
 # -------------------------------------------------------------------------------------------------
 
 function Get-RootPath {
@@ -739,9 +741,17 @@ try {
 }
 catch {
 
-    Write-Log Critical "Fatal script error" @{
-        error = $_.Exception.Message
-        stack = $_.ScriptStackTrace
+    try {
+    Write-Log `
+        -Level Critical `
+        -Message "Fatal script error" `
+        -Data @{
+            error = $_.Exception.Message
+            stack = $_.ScriptStackTrace
+        }
+    }
+    catch {
+        Write-Warning "Unable to write fatal log entry."
     }
 
     Write-Error $_.Exception.Message
