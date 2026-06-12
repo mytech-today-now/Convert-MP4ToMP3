@@ -202,6 +202,10 @@ param(
 
     [switch]$NoLog,
 
+    [switch]$NoShortcut,
+
+    [switch]$CreateShortcut,
+
     [switch]$Help,
 
     [switch]$Examples
