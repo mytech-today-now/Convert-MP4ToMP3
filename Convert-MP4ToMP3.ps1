@@ -91,39 +91,45 @@
 
 .ONLINE_EXECUTION
 
-    ═════════════════════════════════════════════════════════════════════════════════════════════════════
+    ══════════════════════════════════════════════════════════════════════════════════════════════════════
     RUN DIRECTLY FROM GITHUB RAW URL (NO DOWNLOAD REQUIRED)
     ══════════════════════════════════════════════════════════════════════════════════════════════════════
 
-    # Basic execution - runs the script directly from GitHub
-    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex
+    # ⚠️ IMPORTANT: Use ScriptBlock syntax to pass parameters!
+    # The pipe syntax (irm | iex -Param) passes params to Invoke-Expression, NOT the script.
 
-    # With parameters - pass arguments after the pipe
-    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Verbose
+    # ─── Method 1: ScriptBlock (RECOMMENDED for parameters) ───
 
-    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -DryRun
-
-    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Overwrite
-
-    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Recurse
-
-    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -OutputBitrate 320k
-
-    # With explicit directory parameter
-    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Directory "C:\Users\$env:USERNAME\Videos"
-
-    # Combined parameters
-    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Directory "D:\Media" -Recurse -Overwrite -Verbose
-
-    # Using Invoke-Expression with scriptblock (alternative syntax)
+    # Basic execution
     & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1)))
 
-    # With parameters via scriptblock
-    $script = [scriptblock]::Create((irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1))
-    & $script -Directory "C:\Videos" -Recurse -Verbose
+    # With parameters
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1))) -Verbose
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1))) -DryRun
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1))) -Overwrite
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1))) -Recurse
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1))) -OutputBitrate 320k
+
+    # With explicit directory parameter
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1))) -Directory "C:\Users\$env:USERNAME\Videos"
+
+    # Combined parameters
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1))) -Directory "D:\Media" -Recurse -Overwrite -Verbose
 
     # One-liner with all common options
-    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Directory "$env:USERPROFILE\Videos" -Recurse -OutputBitrate 320k -SkipExisting
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1))) -Directory "$env:USERPROFILE\Videos" -Recurse -OutputBitrate 320k -SkipExisting
+
+    # ─── Method 2: Variable ScriptBlock (cleaner for re-use) ───
+
+    $script = [scriptblock]::Create((irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1))
+    & $script -Directory "C:\Videos" -Recurse -Verbose
+    & $script -DryRun -Directory "D:\Media" -Verbose
+
+    # ─── Method 3: Pipe syntax (ONLY for parameterless execution) ───
+
+    # This ONLY works WITHOUT parameters - otherwise params go to iex, not the script
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex
+    # Then the script will prompt for directory interactively
 
     # ⚠️ SECURITY NOTE: Always verify the script content before running with IEX
     # To inspect first without executing:
@@ -251,7 +257,7 @@ $Script:Version = '1.0.0'
 
 # Initialize external logging module
 if (-not $NoLog) {
-    Initialize-Log -ScriptName $Script:ScriptName -ScriptVersion $Script:Version
+    $logInitResult = Initialize-Log -ScriptName $Script:ScriptName -ScriptVersion $Script:Version
 }
 
 # -------------------------------------------------------------------------------------------------
