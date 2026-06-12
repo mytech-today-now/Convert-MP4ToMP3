@@ -12,7 +12,7 @@
     Features include:
 
     • Self-installation and self-updating
-    • Structured JSONL logging
+    • Structured JSONL logging (via myTech.Today logging module)
     • FFmpeg auto-discovery
     • FFmpeg auto-installation
     • Recursive file processing
@@ -38,9 +38,9 @@
         %HOMEDRIVE%\myTech.Today\<ScriptName>\<ScriptName>.ps1
 
     Logging
-        JSONL structured logging:
+        JSONL structured logging via myTech.Today logging module:
 
-        %HOMEDRIVE%\myTech.Today\logs\<ScriptName>_YYYY-MM-DD.jsonl
+        %USERPROFILE%\myTech.Today\logs\<scriptname>.jsonl
 
     FFmpeg Management
         Detection order:
@@ -91,9 +91,9 @@
 
 .ONLINE_EXECUTION
 
-    ═══════════════════════════════════════════════════════════════════════════════════════════════════
+    ═════════════════════════════════════════════════════════════════════════════════════════════════════
     RUN DIRECTLY FROM GITHUB RAW URL (NO DOWNLOAD REQUIRED)
-    ════════════════════════════════════════════════════════════════════════════════════════════════════
+    ══════════════════════════════════════════════════════════════════════════════════════════════════════
 
     # Basic execution - runs the script directly from GitHub
     irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex
@@ -155,9 +155,7 @@
 
 .LOGGING
 
-    Example JSONL:
-
-    {"timestamp":"2026-01-01T12:00:00","level":"Information","message":"Startup"}
+    Uses myTech.Today logging module (JSONL format with monthly archiving, size rotation, Windows Event Log integration)
 
 .EXITCODES
 
@@ -183,6 +181,7 @@ param(
 
     [switch]$ForceInstall,
 
+    # Note: LogLevel parameter kept for compatibility but mapped to external module's levels
     [ValidateSet('Debug','Information','Warning','Error','Critical')]
     [string]$LogLevel = 'Information',
 
@@ -201,6 +200,30 @@ param(
 
     [switch]$Examples
 )
+
+# -------------------------------------------------------------------------------------------------
+# IMPORT EXTERNAL LOGGING MODULE
+# -------------------------------------------------------------------------------------------------
+
+# Import myTech.Today logging module from GitHub
+$loggingUrl = 'https://raw.githubusercontent.com/mytech-today-now/scripts/refs/heads/main/logging.ps1'
+try {
+    $loggingContent = Invoke-WebRequest -Uri $loggingUrl -UseBasicParsing -ErrorAction Stop
+    Invoke-Expression $loggingContent.Content
+}
+catch {
+    Write-Warning "Failed to load external logging module: $($_.Exception.Message)"
+    Write-Warning "Falling back to basic console output only."
+    # Create minimal fallback Write-Log
+    function Write-Log {
+        param([string]$Message, [string]$Level = 'INFO', [string]$Solution, [string]$Context, [string]$Component)
+        $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+        $color = switch ($Level) { 'INFO' {'Cyan'}; 'SUCCESS' {'Green'}; 'WARNING' {'Yellow'}; 'ERROR' {'Red'}; default {'White'} }
+        Write-Host "[$timestamp] [$Level] $Message" -ForegroundColor $color
+    }
+    function Initialize-Log { param([string]$ScriptName, [string]$ScriptVersion) return $null }
+    function Get-LogPath { return $null }
+}
 
 # -------------------------------------------------------------------------------------------------
 # GLOBALS - Handle both file execution and irm | iex execution
@@ -226,6 +249,11 @@ $Script:ScriptName = [System.IO.Path]::GetFileNameWithoutExtension($Script:Scrip
 if (-not $Script:ScriptName) { $Script:ScriptName = 'Convert-MP4ToMP3' }
 $Script:Version = '1.0.0'
 
+# Initialize external logging module
+if (-not $NoLog) {
+    Initialize-Log -ScriptName $Script:ScriptName -ScriptVersion $Script:Version
+}
+
 # -------------------------------------------------------------------------------------------------
 # ROOT (uses %HOMEDRIVE% instead of %ROOT%)
 # -------------------------------------------------------------------------------------------------
@@ -242,8 +270,8 @@ function Get-RootPath {
         return $env:ROOT
     }
 
-    Write-Warning "Environment variable HOMEDRIVE is not defined or path doesn't exist."
-    Write-Warning "Falling back to current drive: $([System.IO.Path]::GetPathRoot((Get-Location).Path))"
+    Write-Log -Message "Environment variable HOMEDRIVE is not defined or path doesn't exist." -Level WARNING
+    Write-Log -Message "Falling back to current drive: $([System.IO.Path]::GetPathRoot((Get-Location).Path))" -Level WARNING
 
     $root = Read-Host "Enter root installation path (default: $([System.IO.Path]::GetPathRoot((Get-Location).Path)))"
 
@@ -276,64 +304,7 @@ $Script:Root = Get-RootPath
 $Script:InstallDirectory = Join-Path $Script:Root "myTech.Today\$Script:ScriptName"
 $Script:InstallPath      = Join-Path $Script:InstallDirectory "$($Script:ScriptName).ps1"
 
-$Script:LogDirectory     = Join-Path $Script:Root 'myTech.Today\logs'
-
 New-Item -ItemType Directory -Force -Path $Script:InstallDirectory | Out-Null
-New-Item -ItemType Directory -Force -Path $Script:LogDirectory | Out-Null
-
-$Script:LogFile = Join-Path `
-    $Script:LogDirectory `
-    "$($Script:ScriptName)_$((Get-Date).ToString('yyyy-MM-dd')).jsonl"
-
-# -------------------------------------------------------------------------------------------------
-# LOGGING
-# -------------------------------------------------------------------------------------------------
-
-function Write-Log {
-
-    param(
-        [string]$Level,
-        [string]$Message,
-        [hashtable]$Data
-    )
-
-    if ($NoLog) { return }
-
-    $levels = @{
-        Debug       = 1
-        Information = 2
-        Warning     = 3
-        Error       = 4
-        Critical    = 5
-    }
-
-    if (-not $levels.ContainsKey($Level) -or $levels[$Level] -lt $levels[$LogLevel]) {
-        return
-    }
-
-    $entry = [ordered]@{
-        timestamp = (Get-Date).ToString("o")
-        level     = $Level
-        message   = $Message
-        data      = if ($Data) { $Data } else { @{} }
-    }
-
-    try {
-        ($entry | ConvertTo-Json -Depth 10 -Compress) |
-            Add-Content -Path $Script:LogFile -Encoding UTF8 -ErrorAction Stop
-    }
-    catch {
-        # Silently fail logging to avoid infinite loops
-    }
-
-    switch ($Level) {
-        'Debug'       { Write-Debug $Message }
-        'Information' { Write-Verbose $Message }
-        'Warning'     { Write-Warning $Message }
-        'Error'       { Write-Error $Message }
-        'Critical'    { Write-Error $Message }
-    }
-}
 
 # -------------------------------------------------------------------------------------------------
 # INSTALL - Skip self-install when running via irm | iex (no source file)
@@ -343,11 +314,11 @@ function Install-Self {
 
     # Skip installation when running from stdin/irm (no physical source file)
     if (-not (Test-Path $Script:ScriptPath) -or $Script:ScriptPath -eq 'Convert-MP4ToMP3.ps1') {
-        Write-Log Debug "Skipping self-install (running from stdin/irm)" @{}
+        Write-Log -Message "Skipping self-install (running from stdin/irm)" -Level INFO -Component "Installer"
         return
     }
 
-    Write-Log Information "Self-installation started" @{}
+    Write-Log -Message "Self-installation started" -Level INFO -Component "Installer"
 
     if ($ForceInstall -or !(Test-Path $Script:InstallPath)) {
 
@@ -365,9 +336,7 @@ function Install-Self {
 
         Write-Host "Installed: $Script:InstallPath" -ForegroundColor Green
 
-        Write-Log Information "Installed script" @{
-            path = $Script:InstallPath
-        }
+        Write-Log -Message "Installed script" -Level INFO -Context "Script installed to $Script:InstallPath" -Component "Installer"
 
         return
     }
@@ -386,14 +355,12 @@ function Install-Self {
 
             Write-Host "Updated installed copy." -ForegroundColor Yellow
 
-            Write-Log Information "Installed version updated" @{}
+            Write-Log -Message "Installed version updated" -Level INFO -Component "Installer"
         }
 
     }
     catch {
-        Write-Log Error "Installation update failure" @{
-            error = $_.Exception.Message
-        }
+        Write-Log -Message "Installation update failure" -Level ERROR -Context $_.Exception.Message -Component "Installer"
     }
 }
 
@@ -477,10 +444,7 @@ function Install-FFmpegDirect {
         return $true
     }
     catch {
-        Write-Log Error "Direct FFmpeg installation failed" @{
-            error = $_.Exception.Message
-        }
-
+        Write-Log -Message "Direct FFmpeg installation failed" -Level ERROR -Context $_.Exception.Message -Component "FFmpeg"
         return $false
     }
 }
@@ -582,9 +546,7 @@ function Convert-MP4File {
 
     if ((Test-Path $mp3) -and $SkipExisting -and !$Overwrite) {
 
-        Write-Log Information "Skipped existing MP3" @{
-            file = $File.FullName
-        }
+        Write-Log -Message "Skipped existing MP3" -Level INFO -Context "File: $($File.FullName)" -Component "Converter"
 
         return @{
             Status='Skipped'
@@ -638,10 +600,7 @@ function Convert-MP4File {
 
         if ($process.ExitCode -ne 0) {
 
-            Write-Log Error "Conversion failed" @{
-                file = $File.FullName
-                stderr = $stderr
-            }
+            Write-Log -Message "Conversion failed" -Level ERROR -Context "File: $($File.FullName)" -Solution "Check FFmpeg output: $stderr" -Component "Converter"
 
             return @{
                 Status='Failed'
@@ -649,10 +608,7 @@ function Convert-MP4File {
             }
         }
 
-        Write-Log Information "Conversion succeeded" @{
-            source = $File.FullName
-            output = $mp3
-        }
+        Write-Log -Message "Conversion succeeded" -Level SUCCESS -Context "Source: $($File.FullName) -> Output: $mp3" -Component "Converter"
 
         return @{
             Status='Success'
@@ -661,10 +617,7 @@ function Convert-MP4File {
     }
     catch {
 
-        Write-Log Error "Exception during conversion" @{
-            file = $File.FullName
-            error = $_.Exception.Message
-        }
+        Write-Log -Message "Exception during conversion" -Level ERROR -Context "File: $($File.FullName)" -Solution $_.Exception.Message -Component "Converter"
 
         return @{
             Status='Failed'
@@ -679,10 +632,7 @@ function Convert-MP4File {
 
 try {
 
-    Write-Log Information "Script startup" @{
-        version = $Script:Version
-        mode    = if (Test-Path $Script:ScriptPath) { 'File' } else { 'IRM/IEX' }
-    }
+    Write-Log -Message "Script startup" -Level INFO -Context "Mode: $(if (Test-Path $Script:ScriptPath) { 'File' } else { 'IRM/IEX' }); Version: $Script:Version" -Component "Main"
 
     Install-Self
 
@@ -690,9 +640,7 @@ try {
 
     & $ffmpeg -version | Out-Null
 
-    Write-Log Information "FFmpeg validated" @{
-        path = $ffmpeg
-    }
+    Write-Log -Message "FFmpeg validated" -Level SUCCESS -Context "Path: $ffmpeg" -Component "FFmpeg"
 
     $sourceDirectory = Get-SourceDirectory
 
@@ -755,13 +703,7 @@ try {
     Write-Host "========================================"
     Write-Host ""
 
-    Write-Log Information "Processing completed" @{
-        total    = $total
-        success  = $success
-        failed   = $failed
-        skipped  = $skipped
-        elapsed  = $elapsed.ToString()
-    }
+    Write-Log -Message "Processing completed" -Level INFO -Context "Total: $total; Success: $success; Failed: $failed; Skipped: $skipped; Elapsed: $($elapsed.ToString())" -Component "Main"
 
     exit 0
 }
@@ -769,15 +711,9 @@ catch {
     $errMsg = if ($_.Exception) { $_.Exception.Message } else { "$_" }
     $errStack = if ($_.ScriptStackTrace) { $_.ScriptStackTrace } else { "No stack trace available" }
 
-    # Try to log the fatal error
+    # Try to log the fatal error using external module
     try {
-        Write-Log `
-            -Level Critical `
-            -Message "Fatal script error" `
-            -Data @{
-                error = $errMsg
-                stack = $errStack
-            }
+        Write-Log -Message "Fatal script error" -Level ERROR -Context $errStack -Solution $errMsg -Component "Main"
     }
     catch {
         Write-Warning "Unable to write fatal log entry."
