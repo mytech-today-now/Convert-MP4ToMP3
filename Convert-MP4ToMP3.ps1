@@ -213,11 +213,16 @@ param(
 
 # Import myTech.Today logging module from GitHub
 $loggingUrl = 'https://raw.githubusercontent.com/mytech-today-now/scripts/refs/heads/main/logging.ps1'
+Write-Host "[*] Loading logging module from GitHub..." -ForegroundColor Cyan -NoNewline
 try {
-    $loggingContent = Invoke-WebRequest -Uri $loggingUrl -UseBasicParsing -ErrorAction Stop
+    $loggingContent = Invoke-WebRequest -Uri $loggingUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 30
+    Write-Host " Done!" -ForegroundColor Green
+    Write-Host "[*] Initializing logging module..." -ForegroundColor Cyan -NoNewline
     Invoke-Expression $loggingContent.Content
+    Write-Host " Done!" -ForegroundColor Green
 }
 catch {
+    Write-Host " Failed!" -ForegroundColor Red
     Write-Warning "Failed to load external logging module: $($_.Exception.Message)"
     Write-Warning "Falling back to basic console output only."
     # Create minimal fallback Write-Log
@@ -392,16 +397,17 @@ function Install-FFmpegWinget {
     if (!(Test-CommandExists winget)) { return $false }
 
     try {
-
+        Write-Host "[*] Installing FFmpeg via Winget..." -ForegroundColor Cyan -NoNewline
         winget install `
             --id Gyan.FFmpeg `
             --accept-package-agreements `
             --accept-source-agreements `
             -h
-
+        Write-Host " Done!" -ForegroundColor Green
         return $true
     }
     catch {
+        Write-Host " Failed!" -ForegroundColor Red
         return $false
     }
 }
@@ -411,10 +417,13 @@ function Install-FFmpegChocolatey {
     if (!(Test-CommandExists choco)) { return $false }
 
     try {
+        Write-Host "[*] Installing FFmpeg via Chocolatey..." -ForegroundColor Cyan -NoNewline
         choco install ffmpeg -y
+        Write-Host " Done!" -ForegroundColor Green
         return $true
     }
     catch {
+        Write-Host " Failed!" -ForegroundColor Red
         return $false
     }
 }
@@ -422,6 +431,7 @@ function Install-FFmpegChocolatey {
 function Install-FFmpegDirect {
 
     try {
+        Write-Host "[*] Downloading FFmpeg from gyan.dev..." -ForegroundColor Cyan -NoNewline
 
         $ffmpegRoot = Join-Path $Script:Root "myTech.Today\ffmpeg"
 
@@ -437,6 +447,9 @@ function Install-FFmpegDirect {
             -Uri $url `
             -OutFile $zip `
             -UseBasicParsing
+        Write-Host " Done!" -ForegroundColor Green
+
+        Write-Host "[*] Extracting FFmpeg..." -ForegroundColor Cyan -NoNewline
 
         Add-Type -AssemblyName System.IO.Compression.FileSystem
 
@@ -446,10 +459,12 @@ function Install-FFmpegDirect {
         )
 
         Remove-Item $zip -Force
+        Write-Host " Done!" -ForegroundColor Green
 
         return $true
     }
     catch {
+        Write-Host " Failed!" -ForegroundColor Red
         Write-Log -Message "Direct FFmpeg installation failed" -Level ERROR -Context $_.Exception.Message -Component "FFmpeg"
         return $false
     }
@@ -458,33 +473,38 @@ function Install-FFmpegDirect {
 function Get-FFmpegPath {
 
     if (Test-CommandExists ffmpeg) {
+        Write-Host "[*] FFmpeg found in PATH" -ForegroundColor Green
         return "ffmpeg"
     }
 
-    Write-Host "FFmpeg not found. Installing..."
+    Write-Host "[*] FFmpeg not found. Checking package managers..." -ForegroundColor Yellow
 
+    Write-Host "[*] Trying Winget..." -ForegroundColor Cyan
     if (Install-FFmpegWinget) {
-        if (Test-CommandExists ffmpeg) { return "ffmpeg" }
+        if (Test-CommandExists ffmpeg) { Write-Host "[*] FFmpeg installed via Winget" -ForegroundColor Green; return "ffmpeg" }
     }
 
+    Write-Host "[*] Trying Chocolatey..." -ForegroundColor Cyan
     if (Install-FFmpegChocolatey) {
-        if (Test-CommandExists ffmpeg) { return "ffmpeg" }
+        if (Test-CommandExists ffmpeg) { Write-Host "[*] FFmpeg installed via Chocolatey" -ForegroundColor Green; return "ffmpeg" }
     }
 
-    Install-FFmpegDirect | Out-Null
+    Write-Host "[*] Falling back to direct download..." -ForegroundColor Cyan
+    if (Install-FFmpegDirect) {
+        $candidate = Get-ChildItem `
+            -Path (Join-Path $Script:Root "myTech.Today\ffmpeg") `
+            -Filter ffmpeg.exe `
+            -Recurse `
+            -ErrorAction SilentlyContinue |
+            Select-Object -First 1
 
-    $candidate = Get-ChildItem `
-        -Path (Join-Path $Script:Root "myTech.Today\ffmpeg") `
-        -Filter ffmpeg.exe `
-        -Recurse `
-        -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-
-    if ($candidate) {
-        return $candidate.FullName
+        if ($candidate) {
+            Write-Host "[*] FFmpeg installed locally: $($candidate.FullName)" -ForegroundColor Green
+            return $candidate.FullName
+        }
     }
 
-    throw "Unable to locate FFmpeg."
+    throw "Unable to locate or install FFmpeg."
 }
 
 # -------------------------------------------------------------------------------------------------
@@ -563,7 +583,6 @@ function Convert-MP4File {
     if ($DryRun) {
 
         Write-Host "[DRYRUN] $($File.Name)"
-
         return @{
             Status='DryRun'
             File=$File.FullName
@@ -571,6 +590,8 @@ function Convert-MP4File {
     }
 
     try {
+        # Show per-file progress
+        Write-Host "[*] Converting: $($File.Name) -> $([System.IO.Path]::GetFileName($mp3))" -ForegroundColor Cyan
 
         $arguments = @(
             '-y'
@@ -599,6 +620,16 @@ function Convert-MP4File {
 
         [void]$process.Start()
 
+        # Show spinner while waiting
+        $spinner = '|', '/', '-', '\\'
+        $spinnerIndex = 0
+        while (-not $process.HasExited) {
+            Write-Host -NoNewline "`r[*] Processing... $($spinner[$spinnerIndex]) "
+            $spinnerIndex = ($spinnerIndex + 1) % $spinner.Count
+            Start-Sleep -Milliseconds 200
+        }
+        Write-Host "`r[*] Processing... Done!     " -ForegroundColor Green
+
         $stdout = $process.StandardOutput.ReadToEnd()
         $stderr = $process.StandardError.ReadToEnd()
 
@@ -607,6 +638,7 @@ function Convert-MP4File {
         if ($process.ExitCode -ne 0) {
 
             Write-Log -Message "Conversion failed" -Level ERROR -Context "File: $($File.FullName)" -Solution "Check FFmpeg output: $stderr" -Component "Converter"
+            Write-Host "[!] Failed: $($File.Name)" -ForegroundColor Red
 
             return @{
                 Status='Failed'
@@ -615,6 +647,7 @@ function Convert-MP4File {
         }
 
         Write-Log -Message "Conversion succeeded" -Level SUCCESS -Context "Source: $($File.FullName) -> Output: $mp3" -Component "Converter"
+        Write-Host "[+] Success: $($File.Name)" -ForegroundColor Green
 
         return @{
             Status='Success'
@@ -624,6 +657,7 @@ function Convert-MP4File {
     catch {
 
         Write-Log -Message "Exception during conversion" -Level ERROR -Context "File: $($File.FullName)" -Solution $_.Exception.Message -Component "Converter"
+        Write-Host "[!] Error: $($File.Name) - $($_.Exception.Message)" -ForegroundColor Red
 
         return @{
             Status='Failed'
@@ -679,8 +713,10 @@ try {
 
         Write-Progress `
             -Activity "Converting MP4 Files" `
-            -Status "$index of $total" `
+            -Status "[$index of $total] $($file.Name)" `
             -PercentComplete $percent
+
+        Write-Host ""  # Ensure clean line for per-file output
 
         $result = Convert-MP4File `
             -File $file `
