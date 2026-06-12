@@ -37,6 +37,14 @@
 
         %HOMEDRIVE%\myTech.Today\<ScriptName>\<ScriptName>.ps1
 
+    Shortcut Management
+        Automatically creates/updates "mp4 2 mp3.lnk" shortcut on:
+        • Desktop: %USERPROFILE%\Desktop\mp4 2 mp3.lnk
+        • Start Menu: %APPDATA%\Microsoft\Windows\Start Menu\Programs\mp4 2 mp3.lnk
+        • Shortcut launches: powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%HOMEDRIVE%\myTech.Today\Convert-MP4ToMP3\Convert-MP4ToMP3.ps1"
+        • Version-aware: recreates only when script version changes
+        • Skip with -NoShortcut, force with -CreateShortcut
+
     Logging
         JSONL structured logging via myTech.Today logging module:
 
@@ -89,6 +97,10 @@
     & "$env:HOMEDRIVE\myTech.Today\Convert-MP4ToMP3\Convert-MP4ToMP3.ps1" -Recurse
     & "$env:HOMEDRIVE\myTech.Today\Convert-MP4ToMP3\Convert-MP4ToMP3.ps1" -MaxParallelJobs 4
 
+    # Shortcut management
+    & "$env:HOMEDRIVE\myTech.Today\Convert-MP4ToMP3\Convert-MP4ToMP3.ps1" -CreateShortcut
+    & "$env:HOMEDRIVE\myTech.Today\Convert-MP4ToMP3\Convert-MP4ToMP3.ps1" -NoShortcut
+
 .ONLINE_EXECUTION
 
     ══════════════════════════════════════════════════════════════════════════════════════════════════════
@@ -118,6 +130,10 @@
 
     # One-liner with all common options
     & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1))) -Directory "$env:USERPROFILE\Videos" -Recurse -OutputBitrate 320k -SkipExisting
+
+    # Shortcut management (run once to install shortcuts)
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1))) -CreateShortcut
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1))) -NoShortcut
 
     # ─── Method 2: Variable ScriptBlock (cleaner for re-use) ───
 
@@ -376,6 +392,142 @@ function Install-Self {
     }
     catch {
         Write-Log -Message "Installation update failure" -Level ERROR -Context $_.Exception.Message -Component "Installer"
+    }
+}
+
+# -------------------------------------------------------------------------------------------------
+# SHORTCUT MANAGEMENT
+# -------------------------------------------------------------------------------------------------
+
+function Get-FullScriptVersion {
+    # Get version from installed script if possible, otherwise use script version
+    if (Test-Path $Script:InstallPath) {
+        try {
+            $content = Get-Content $Script:InstallPath -Raw
+            if ($content -match '\$Script:Version\s*=\s*[\'"]([\d.]+)[\'"]') {
+                return $matches[1]
+            }
+        }
+        catch { }
+    }
+    return $Script:Version
+}
+
+function Get-ShortcutTargetPath {
+    param(
+        [string]$ShortcutPath
+    )
+
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($ShortcutPath)
+        return $shortcut.TargetPath + " " + $shortcut.Arguments
+    }
+    catch {
+        return $null
+    }
+}
+
+function Test-ShortcutIsCurrent {
+    param(
+        [string]$ShortcutPath
+    )
+
+    if (-not (Test-Path $ShortcutPath)) {
+        return $false
+    }
+
+    $target = Get-ShortcutTargetPath -ShortcutPath $ShortcutPath
+    if (-not $target) {
+        return $false
+    }
+
+    $currentVersion = Get-FullScriptVersion
+    $expectedTarget = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$($Script:InstallPath)`""
+
+    # Check if shortcut points to the correct installed script with current version
+    return $target -like "*$($Script:InstallPath)*" -and $target -like "*$currentVersion*"
+}
+
+function Create-Shortcut {
+    param(
+        [string]$ShortcutPath,
+        [string]$Description = "Convert MP4 to MP3"
+    )
+
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($ShortcutPath)
+
+        $currentVersion = Get-FullScriptVersion
+        $shortcut.TargetPath = "powershell.exe"
+        $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$($Script:InstallPath)`""
+        $shortcut.WorkingDirectory = $Script:InstallDirectory
+        $shortcut.Description = "$Description (v$currentVersion)"
+        $shortcut.IconLocation = $Script:InstallPath
+        $shortcut.Save()
+
+        Write-Log -Message "Created shortcut" -Level INFO -Context "Path: $ShortcutPath; Version: $currentVersion" -Component "Shortcut"
+        return $true
+    }
+    catch {
+        Write-Log -Message "Failed to create shortcut" -Level WARNING -Context "Path: $ShortcutPath; Error: $($_.Exception.Message)" -Component "Shortcut"
+        return $false
+    }
+}
+
+function Install-Shortcuts {
+    if ($NoShortcut) {
+        Write-Log -Message "Shortcut creation skipped (NoShortcut switch)" -Level INFO -Component "Shortcut"
+        return
+    }
+
+    Write-Log -Message "Checking/Installing shortcuts..." -Level INFO -Component "Shortcut"
+
+    $shortcutName = "mp4 2 mp3.lnk"
+    $desktopPath = [Environment]::GetFolderPath('Desktop')
+    $startMenuPath = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
+
+    $desktopShortcut = Join-Path $desktopPath $shortcutName
+    $startMenuShortcut = Join-Path $startMenuPath $shortcutName
+
+    $createdAny = $false
+
+    # Check Desktop shortcut
+    if (-not (Test-ShortcutIsCurrent -ShortcutPath $desktopShortcut)) {
+        Write-Host "[*] Installing Desktop shortcut..." -ForegroundColor Cyan -NoNewline
+        if (Create-Shortcut -ShortcutPath $desktopShortcut) {
+            Write-Host " Done!" -ForegroundColor Green
+            $createdAny = $true
+        }
+        else {
+            Write-Host " Failed!" -ForegroundColor Red
+        }
+    }
+    else {
+        Write-Log -Message "Desktop shortcut is current" -Level INFO -Component "Shortcut"
+    }
+
+    # Check Start Menu shortcut
+    if (-not (Test-ShortcutIsCurrent -ShortcutPath $startMenuShortcut)) {
+        Write-Host "[*] Installing Start Menu shortcut..." -ForegroundColor Cyan -NoNewline
+        if (Create-Shortcut -ShortcutPath $startMenuShortcut) {
+            Write-Host " Done!" -ForegroundColor Green
+            $createdAny = $true
+        }
+        else {
+            Write-Host " Failed!" -ForegroundColor Red
+        }
+    }
+    else {
+        Write-Log -Message "Start Menu shortcut is current" -Level INFO -Component "Shortcut"
+    }
+
+    if ($createdAny) {
+        Write-Host "[+] Shortcuts installed successfully" -ForegroundColor Green
+    }
+    else {
+        Write-Log -Message "All shortcuts already current" -Level INFO -Component "Shortcut"
     }
 }
 
@@ -679,6 +831,18 @@ try {
     Write-Log -Message "Script startup" -Level INFO -Context "Mode: $(if (Test-Path $Script:ScriptPath) { 'File' } else { 'IRM/IEX' }); Version: $Script:Version" -Component "Main"
 
     Install-Self
+
+    # Install shortcuts after self-install (so shortcut points to installed location)
+    Write-Host "[DEBUG] About to check shortcuts, CreateShortcut=$CreateShortcut" -ForegroundColor Gray
+    Write-Log -Message "Checking shortcuts (CreateShortcut=$CreateShortcut)" -Level INFO -Component "Main"
+    Write-Host "[DEBUG] Write-Log returned" -ForegroundColor Gray
+    if (-not $CreateShortcut) {
+        Install-Shortcuts
+    }
+    else {
+        Write-Host "[*] Force creating shortcuts..." -ForegroundColor Cyan
+        Install-Shortcuts
+    }
 
     $ffmpeg = Get-FFmpegPath
 
