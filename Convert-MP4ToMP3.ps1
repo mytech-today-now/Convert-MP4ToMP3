@@ -1,6 +1,6 @@
 # =================================================================================================
 # Convert-MP4ToMP3.ps1
-# =================================================================================================
+# ==================================================================================================
 <#
 .SYNOPSIS
     Converts MP4 video files to MP3 audio files using FFmpeg.
@@ -91,9 +91,9 @@
 
 .ONLINE_EXECUTION
 
-    ══════════════════════════════════════════════════════════════════════════════════════════════════
+    ═══════════════════════════════════════════════════════════════════════════════════════════════════
     RUN DIRECTLY FROM GITHUB RAW URL (NO DOWNLOAD REQUIRED)
-    ══════════════════════════════════════════════════════════════════════════════════════════════════
+    ════════════════════════════════════════════════════════════════════════════════════════════════════
 
     # Basic execution - runs the script directly from GitHub
     irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex
@@ -140,7 +140,7 @@
     Compatibility: PowerShell 5.1
     Encoding: UTF-8
     License: User Defined
-    Repository: https://github.com/kyle-h/PowerShellScripts
+    Repository: https://github.com/mytech-today-now/Convert-MP4ToMP3
 
 .TROUBLESHOOTING
 
@@ -203,17 +203,31 @@ param(
 )
 
 # -------------------------------------------------------------------------------------------------
-# GLOBALS
+# GLOBALS - Handle both file execution and irm | iex execution
 # -------------------------------------------------------------------------------------------------
 
 $ErrorActionPreference = 'Stop'
 $Script:StartTime = Get-Date
-$Script:ScriptPath = $MyInvocation.MyCommand.Path
+
+# Detect script path: works for both file execution and irm | iex
+if ($MyInvocation.MyCommand.CommandType -eq 'ExternalScript' -and $MyInvocation.MyCommand.Path) {
+    $Script:ScriptPath = $MyInvocation.MyCommand.Path
+}
+elseif ($MyInvocation.MyCommand.CommandType -eq 'Script' -and $MyInvocation.InvocationName) {
+    # Running via irm | iex or dot-sourced
+    $Script:ScriptPath = $MyInvocation.InvocationName
+}
+else {
+    # Fallback for direct scriptblock execution
+    $Script:ScriptPath = 'Convert-MP4ToMP3.ps1'
+}
+
 $Script:ScriptName = [System.IO.Path]::GetFileNameWithoutExtension($Script:ScriptPath)
+if (-not $Script:ScriptName) { $Script:ScriptName = 'Convert-MP4ToMP3' }
 $Script:Version = '1.0.0'
 
 # -------------------------------------------------------------------------------------------------
-# ROOT (uses %HOMEDRIVE% instead of $env:HOMEDRIVE)
+# ROOT (uses %HOMEDRIVE% instead of %ROOT%)
 # -------------------------------------------------------------------------------------------------
 
 function Get-RootPath {
@@ -293,7 +307,7 @@ function Write-Log {
         Critical    = 5
     }
 
-    if ($levels[$Level] -lt $levels[$LogLevel]) {
+    if (-not $levels.ContainsKey($Level) -or $levels[$Level] -lt $levels[$LogLevel]) {
         return
     }
 
@@ -301,11 +315,16 @@ function Write-Log {
         timestamp = (Get-Date).ToString("o")
         level     = $Level
         message   = $Message
-        data      = $Data
+        data      = if ($Data) { $Data } else { @{} }
     }
 
-    ($entry | ConvertTo-Json -Depth 10 -Compress) |
-        Add-Content -Path $Script:LogFile -Encoding UTF8
+    try {
+        ($entry | ConvertTo-Json -Depth 10 -Compress) |
+            Add-Content -Path $Script:LogFile -Encoding UTF8 -ErrorAction Stop
+    }
+    catch {
+        # Silently fail logging to avoid infinite loops
+    }
 
     switch ($Level) {
         'Debug'       { Write-Debug $Message }
@@ -317,10 +336,16 @@ function Write-Log {
 }
 
 # -------------------------------------------------------------------------------------------------
-# INSTALL
+# INSTALL - Skip self-install when running via irm | iex (no source file)
 # -------------------------------------------------------------------------------------------------
 
 function Install-Self {
+
+    # Skip installation when running from stdin/irm (no physical source file)
+    if (-not (Test-Path $Script:ScriptPath) -or $Script:ScriptPath -eq 'Convert-MP4ToMP3.ps1') {
+        Write-Log Debug "Skipping self-install (running from stdin/irm)" @{}
+        return
+    }
 
     Write-Log Information "Self-installation started" @{}
 
@@ -656,6 +681,7 @@ try {
 
     Write-Log Information "Script startup" @{
         version = $Script:Version
+        mode    = if (Test-Path $Script:ScriptPath) { 'File' } else { 'IRM/IEX' }
     }
 
     Install-Self
@@ -740,21 +766,25 @@ try {
     exit 0
 }
 catch {
+    $errMsg = if ($_.Exception) { $_.Exception.Message } else { "$_" }
+    $errStack = if ($_.ScriptStackTrace) { $_.ScriptStackTrace } else { "No stack trace available" }
 
+    # Try to log the fatal error
     try {
-    Write-Log `
-        -Level Critical `
-        -Message "Fatal script error" `
-        -Data @{
-            error = $_.Exception.Message
-            stack = $_.ScriptStackTrace
-        }
+        Write-Log `
+            -Level Critical `
+            -Message "Fatal script error" `
+            -Data @{
+                error = $errMsg
+                stack = $errStack
+            }
     }
     catch {
         Write-Warning "Unable to write fatal log entry."
     }
 
-    Write-Error $_.Exception.Message
+    # Write error to console with proper message
+    Write-Error -Message $errMsg
 
     exit 1
 }
