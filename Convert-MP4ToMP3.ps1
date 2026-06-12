@@ -96,39 +96,39 @@
     ══════════════════════════════════════════════════════════════════════════════════════════════════
 
     # Basic execution - runs the script directly from GitHub
-    irm https://raw.githubusercontent.com/kyle-h/PowerShellScripts/main/Convert-MP4ToMP3/Convert-MP4ToMP3.ps1 | iex
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex
 
     # With parameters - pass arguments after the pipe
-    irm https://raw.githubusercontent.com/kyle-h/PowerShellScripts/main/Convert-MP4ToMP3/Convert-MP4ToMP3.ps1 | iex -DryRun
-    irm https://raw.githubusercontent.com/kyle-h/PowerShellScripts/main/Convert-MP4ToMP3/Convert-MP4ToMP3.ps1 | iex -Overwrite
-    irm https://raw.githubusercontent.com/kyle-h/PowerShellScripts/main/Convert-MP4ToMP3/Convert-MP4ToMP3.ps1 | iex -Verbose
-    irm https://raw.githubusercontent.com/kyle-h/PowerShellScripts/main/Convert-MP4ToMP3/Convert-MP4ToMP3.ps1 | iex -Debug
-    irm https://raw.githubusercontent.com/kyle-h/PowerShellScripts/main/Convert-MP4ToMP3/Convert-MP4ToMP3.ps1 | iex -OutputBitrate 320k
-    irm https://raw.githubusercontent.com/kyle-h/PowerShellScripts/main/Convert-MP4ToMP3/Convert-MP4ToMP3.ps1 | iex -Recurse
-    irm https://raw.githubusercontent.com/kyle-h/PowerShellScripts/main/Convert-MP4ToMP3/Convert-MP4ToMP3.ps1 | iex -MaxParallelJobs 4
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -DryRun
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Overwrite
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Verbose
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Debug
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -OutputBitrate 320k
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Recurse
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -MaxParallelJobs 4
 
     # With explicit directory parameter
-    irm https://raw.githubusercontent.com/kyle-h/PowerShellScripts/main/Convert-MP4ToMP3/Convert-MP4ToMP3.ps1 | iex -Directory "C:\Users\$env:USERNAME\Videos"
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Directory "C:\Users\$env:USERNAME\Videos"
 
     # Combined parameters
-    irm https://raw.githubusercontent.com/kyle-h/PowerShellScripts/main/Convert-MP4ToMP3/Convert-MP4ToMP3.ps1 | iex -Directory "D:\Media" -Recurse -Overwrite -Verbose
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Directory "D:\Media" -Recurse -Overwrite -Verbose
 
     # Using Invoke-Expression with scriptblock (alternative syntax)
-    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/kyle-h/PowerShellScripts/main/Convert-MP4ToMP3/Convert-MP4ToMP3.ps1)))
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1)))
 
     # With parameters via scriptblock
-    $script = [scriptblock]::Create((irm https://raw.githubusercontent.com/kyle-h/PowerShellScripts/main/Convert-MP4ToMP3/Convert-MP4ToMP3.ps1))
+    $script = [scriptblock]::Create((irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1))
     & $script -Directory "C:\Videos" -Recurse -Verbose
 
     # One-liner with all common options
-    irm https://raw.githubusercontent.com/kyle-h/PowerShellScripts/main/Convert-MP4ToMP3/Convert-MP4ToMP3.ps1 | iex -Directory "$env:USERPROFILE\Videos" -Recurse -OutputBitrate 320k -SkipExisting
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 | iex -Directory "$env:USERPROFILE\Videos" -Recurse -OutputBitrate 320k -SkipExisting
 
     # ⚠️ SECURITY NOTE: Always verify the script content before running with IEX
     # To inspect first without executing:
-    irm https://raw.githubusercontent.com/kyle-h/PowerShellScripts/main/Convert-MP4ToMP3/Convert-MP4ToMP3.ps1
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1
 
     # Or save locally first, inspect, then run:
-    irm https://raw.githubusercontent.com/kyle-h/PowerShellScripts/main/Convert-MP4ToMP3/Convert-MP4ToMP3.ps1 -OutFile "$env:TEMP\Convert-MP4ToMP3.ps1"
+    irm https://raw.githubusercontent.com/mytech-today-now/Convert-MP4ToMP3/refs/heads/main/Convert-MP4ToMP3.ps1 -OutFile "$env:TEMP\Convert-MP4ToMP3.ps1"
     notepad "$env:TEMP\Convert-MP4ToMP3.ps1"
     & "$env:TEMP\Convert-MP4ToMP3.ps1" -Recurse -Verbose
 
