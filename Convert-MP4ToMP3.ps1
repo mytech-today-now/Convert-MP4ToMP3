@@ -105,7 +105,7 @@
 
     ══════════════════════════════════════════════════════════════════════════════════════════════════════
     RUN DIRECTLY FROM GITHUB RAW URL (NO DOWNLOAD REQUIRED)
-    ══════════════════════════════════════════════════════════════════════════════════════════════════════
+    ═══════════════════════════════════════════════════════════════════════════════════════════════════════
 
     # ⚠️ IMPORTANT: Use ScriptBlock syntax to pass parameters!
     # The pipe syntax (irm | iex -Param) passes params to Invoke-Expression, NOT the script.
@@ -404,7 +404,8 @@ function Get-FullScriptVersion {
     if (Test-Path $Script:InstallPath) {
         try {
             $content = Get-Content $Script:InstallPath -Raw
-            if ($content -match '\$Script:Version\s*=\s*[\'"]([\d.]+)[\'"]') {
+            # Use a simple approach - look for version number after $Script:Version
+            if ($content -match '\$Script:Version\s*=\s*[\'\"]([\d.]+)[\'\"]') {
                 return $matches[1]
             }
         }
@@ -739,6 +740,7 @@ function Convert-MP4File {
     if ($DryRun) {
 
         Write-Host "[DRYRUN] $($File.Name)"
+
         return @{
             Status='DryRun'
             File=$File.FullName
@@ -777,7 +779,7 @@ function Convert-MP4File {
         [void]$process.Start()
 
         # Show spinner while waiting
-        $spinner = '|', '/', '-', '\\'
+        $spinner = '|', '/', '-', '\'
         $spinnerIndex = 0
         while (-not $process.HasExited) {
             Write-Host -NoNewline "`r[*] Processing... $($spinner[$spinnerIndex]) "
@@ -833,9 +835,7 @@ try {
     Install-Self
 
     # Install shortcuts after self-install (so shortcut points to installed location)
-    Write-Host "[DEBUG] About to check shortcuts, CreateShortcut=$CreateShortcut" -ForegroundColor Gray
     Write-Log -Message "Checking shortcuts (CreateShortcut=$CreateShortcut)" -Level INFO -Component "Main"
-    Write-Host "[DEBUG] Write-Log returned" -ForegroundColor Gray
     if (-not $CreateShortcut) {
         Install-Shortcuts
     }
