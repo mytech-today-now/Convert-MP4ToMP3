@@ -103,9 +103,9 @@
 
 .ONLINE_EXECUTION
 
-    ══════════════════════════════════════════════════════════════════════════════════════════════════════
+    ════════════════════════════════════════════════════════════════════════════════════════════════════════
     RUN DIRECTLY FROM GITHUB RAW URL (NO DOWNLOAD REQUIRED)
-    ═══════════════════════════════════════════════════════════════════════════════════════════════════════
+    ═════════════════════════════════════════════════════════════════════════════════════════════════════════
 
     # ⚠️ IMPORTANT: Use ScriptBlock syntax to pass parameters!
     # The pipe syntax (irm | iex -Param) passes params to Invoke-Expression, NOT the script.
@@ -405,7 +405,8 @@ function Get-FullScriptVersion {
         try {
             $content = Get-Content $Script:InstallPath -Raw
             # Use a simple approach - look for version number after $Script:Version
-            if ($content -match '\$Script:Version\s*=\s*[\'\"]([\d.]+)[\'\"]') {
+            # FIX: Use double-quoted string with backtick escaping for $ and quotes
+            if ($content -match "`$Script:Version\s*=\s*[`"']([\d.]+)[`"']") {
                 return $matches[1]
             }
         }
@@ -779,7 +780,8 @@ function Convert-MP4File {
         [void]$process.Start()
 
         # Show spinner while waiting
-        $spinner = '|', '/', '-', '\'
+        # FIX: Use double-quoted string for backslash to avoid single-quote escaping issues
+        $spinner = '|', '/', '-', "\"
         $spinnerIndex = 0
         while (-not $process.HasExited) {
             Write-Host -NoNewline "`r[*] Processing... $($spinner[$spinnerIndex]) "
