@@ -728,10 +728,12 @@ function Convert-MP4File {
         '.mp3'
     )
 
+    $fileSizeMB = [math]::Round($File.Length / 1MB, 2)
+    $convertStartTime = Get-Date
+
     if ((Test-Path $mp3) -and $SkipExisting -and !$Overwrite) {
-
-        Write-Log -Message "Skipped existing MP3" -Level INFO -Context "File: $($File.FullName)" -Component "Converter"
-
+        Write-Log -Message "Skipped existing MP3 (already exists)" -Level INFO -Context "File: $($File.FullName); Size: ${fileSizeMB}MB" -Component "Converter"
+        Write-Host "[-] Skipped (exists): $($File.Name) (${fileSizeMB}MB)" -ForegroundColor Yellow
         return @{
             Status='Skipped'
             File=$File.FullName
@@ -739,9 +741,8 @@ function Convert-MP4File {
     }
 
     if ($DryRun) {
-
-        Write-Host "[DRYRUN] $($File.Name)"
-
+        Write-Log -Message "Dry-run: would convert" -Level INFO -Context "File: $($File.FullName); Size: ${fileSizeMB}MB; Output: $mp3" -Component "Converter"
+        Write-Host "[DRYRUN] $($File.Name) (${fileSizeMB}MB) -> $([System.IO.Path]::GetFileName($mp3))" -ForegroundColor Cyan
         return @{
             Status='DryRun'
             File=$File.FullName
@@ -749,8 +750,9 @@ function Convert-MP4File {
     }
 
     try {
-        # Show per-file progress
-        Write-Host "[*] Converting: $($File.Name) -> $([System.IO.Path]::GetFileName($mp3))" -ForegroundColor Cyan
+        # Log conversion start with details
+        Write-Log -Message "Starting conversion" -Level INFO -Context "File: $($File.FullName); Size: ${fileSizeMB}MB; Output: $mp3; SampleRate: ${OutputSampleRate}Hz; Bitrate: $OutputBitrate" -Component "Converter"
+        Write-Host "[*] Converting: $($File.Name) (${fileSizeMB}MB) -> $([System.IO.Path]::GetFileName($mp3))" -ForegroundColor Cyan
 
         $arguments = @(
             '-y'
@@ -766,10 +768,11 @@ function Convert-MP4File {
             "`"$mp3`""
         )
 
+        $ffmpegCmd = "$FFmpeg " + ($arguments -join ' ')
+        Write-Log -Message "FFmpeg command" -Level DEBUG -Context "Command: $ffmpegCmd" -Component "Converter"
+
         $process = New-Object System.Diagnostics.Process
-
         $process.StartInfo = New-Object System.Diagnostics.ProcessStartInfo
-
         $process.StartInfo.FileName = $FFmpeg
         $process.StartInfo.Arguments = ($arguments -join ' ')
         $process.StartInfo.RedirectStandardError = $true
@@ -779,49 +782,82 @@ function Convert-MP4File {
 
         [void]$process.Start()
 
-        # Show spinner while waiting
-        # FIX: Use double-quoted string for backslash to avoid single-quote escaping issues
+        # Capture stderr in real-time for progress logging
+        $stderrBuilder = New-Object System.Text.StringBuilder
+        $stdoutBuilder = New-Object System.Text.StringBuilder
+
+        # Read stderr asynchronously to capture progress
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+
+        # Show spinner while waiting, also log progress periodically
         $spinner = '|', '/', '-', "\"
         $spinnerIndex = 0
+        $lastProgressLog = [DateTime]::MinValue
         while (-not $process.HasExited) {
             Write-Host -NoNewline "`r[*] Processing... $($spinner[$spinnerIndex]) "
             $spinnerIndex = ($spinnerIndex + 1) % $spinner.Count
+
+            # Log progress every 10 seconds
+            $elapsed = (Get-Date) - $convertStartTime
+            if ($elapsed.TotalSeconds -ge 10 -and $elapsed.TotalSeconds - $lastProgressLog.TotalSeconds -ge 10) {
+                Write-Log -Message "Conversion in progress" -Level INFO -Context "File: $($File.Name); Elapsed: $([math]::Round($elapsed.TotalSeconds, 1))s" -Component "Converter"
+                $lastProgressLog = $elapsed
+            }
             Start-Sleep -Milliseconds 200
         }
         Write-Host "`r[*] Processing... Done!     " -ForegroundColor Green
 
-        $stdout = $process.StandardOutput.ReadToEnd()
-        $stderr = $process.StandardError.ReadToEnd()
+        # Wait for async reads to complete
+        $stderrTask.Wait()
+        $stdoutTask.Wait()
+        $stderr = $stderrTask.Result
+        $stdout = $stdoutTask.Result
 
         $process.WaitForExit()
 
-        if ($process.ExitCode -ne 0) {
+        $convertElapsed = (Get-Date) - $convertStartTime
 
-            Write-Log -Message "Conversion failed" -Level ERROR -Context "File: $($File.FullName)" -Solution "Check FFmpeg output: $stderr" -Component "Converter"
-            Write-Host "[!] Failed: $($File.Name)" -ForegroundColor Red
+        if ($process.ExitCode -ne 0) {
+            $errorMsg = if ($stderr) { $stderr.Trim() } else { "FFmpeg exited with code $($process.ExitCode)" }
+            Write-Log -Message "Conversion FAILED" -Level ERROR -Context "File: $($File.FullName); ExitCode: $($process.ExitCode); Duration: $([math]::Round($convertElapsed.TotalSeconds, 1))s; Error: $errorMsg" -Component "Converter"
+            Write-Log -Message "FFmpeg stderr (full)" -Level DEBUG -Context "File: $($File.FullName); Stderr: $stderr" -Component "Converter"
+            Write-Host "[!] Failed: $($File.Name) - $errorMsg" -ForegroundColor Red
 
             return @{
                 Status='Failed'
                 File=$File.FullName
+                Error=$errorMsg
             }
         }
 
-        Write-Log -Message "Conversion succeeded" -Level SUCCESS -Context "Source: $($File.FullName) -> Output: $mp3" -Component "Converter"
-        Write-Host "[+] Success: $($File.Name)" -ForegroundColor Green
+        # Get output file size
+        $outputSizeMB = if (Test-Path $mp3) { [math]::Round((Get-Item $mp3).Length / 1MB, 2) } else { 0 }
+        $compressionRatio = if ($fileSizeMB -gt 0) { [math]::Round(($outputSizeMB / $fileSizeMB) * 100, 1) } else { 0 }
+
+        Write-Log -Message "Conversion SUCCESS" -Level SUCCESS -Context "File: $($File.FullName); Output: $mp3; InputSize: ${fileSizeMB}MB; OutputSize: ${outputSizeMB}MB; Ratio: ${compressionRatio}%; Duration: $([math]::Round($convertElapsed.TotalSeconds, 1))s" -Component "Converter"
+        Write-Log -Message "FFmpeg stderr" -Level DEBUG -Context "File: $($File.FullName); Stderr: $($stderr.Trim())" -Component "Converter"
+        Write-Host "[+] Success: $($File.Name) -> ${outputSizeMB}MB (${compressionRatio}% of original) in $([math]::Round($convertElapsed.TotalSeconds, 1))s" -ForegroundColor Green
 
         return @{
             Status='Success'
             File=$File.FullName
+            OutputFile=$mp3
+            InputSizeMB=$fileSizeMB
+            OutputSizeMB=$outputSizeMB
+            DurationSeconds=[math]::Round($convertElapsed.TotalSeconds, 1)
         }
     }
     catch {
-
-        Write-Log -Message "Exception during conversion" -Level ERROR -Context "File: $($File.FullName)" -Solution $_.Exception.Message -Component "Converter"
+        $convertElapsed = (Get-Date) - $convertStartTime
+        Write-Log -Message "Exception during conversion" -Level ERROR -Context "File: $($File.FullName); Duration: $([math]::Round($convertElapsed.TotalSeconds, 1))s; Error: $($_.Exception.Message)" -Component "Converter"
+        Write-Log -Message "Exception stack trace" -Level DEBUG -Context "File: $($File.FullName); StackTrace: $($_.ScriptStackTrace)" -Component "Converter"
         Write-Host "[!] Error: $($File.Name) - $($_.Exception.Message)" -ForegroundColor Red
 
         return @{
             Status='Failed'
             File=$File.FullName
+            Error=$_.Exception.Message
         }
     }
 }
@@ -864,10 +900,18 @@ try {
 
     if ($total -eq 0) {
 
+        Write-Log -Message "No MP4 files found in source directory" -Level WARNING -Context "Directory: $sourceDirectory; Recurse: $Recurse" -Component "Main"
         Write-Warning "No MP4 files found."
 
         exit 0
     }
+
+    Write-Log -Message "Starting batch conversion" -Level INFO -Context "Total files: $total; Source: $sourceDirectory; Recurse: $Recurse; Bitrate: $OutputBitrate; SampleRate: ${OutputSampleRate}Hz; SkipExisting: $SkipExisting; Overwrite: $Overwrite; DryRun: $DryRun; MaxParallelJobs: $MaxParallelJobs" -Component "Main"
+
+    Write-Host ""
+    Write-Host "Scanning: $sourceDirectory"
+    Write-Host "Found $total MP4 file(s)"
+    Write-Host ""
 
     $success = 0
     $failed = 0
@@ -886,7 +930,10 @@ try {
             -Status "[$index of $total] $($file.Name)" `
             -PercentComplete $percent
 
-        Write-Host ""  # Ensure clean line for per-file output
+        # Log each file being processed
+        $fileSizeMB = [math]::Round($file.Length / 1MB, 2)
+        Write-Log -Message "Processing file" -Level INFO -Context "File: $($file.FullName); Index: $index of $total; Size: ${fileSizeMB}MB" -Component "Main"
+        Write-Host "[$index/$total] $($file.Name) (${fileSizeMB}MB)"
 
         $result = Convert-MP4File `
             -File $file `
@@ -894,14 +941,30 @@ try {
 
         switch ($result.Status) {
 
-            'Success' { $success++ }
-            'Failed'  { $failed++ }
-            'Skipped' { $skipped++ }
-            'DryRun'  { $skipped++ }
+            'Success' { 
+                $success++ 
+                if ($result.OutputSizeMB) {
+                    Write-Log -Message "File converted successfully" -Level INFO -Context "File: $($result.File); Output: $($result.OutputFile); OutputSize: $($result.OutputSizeMB)MB; Duration: $($result.DurationSeconds)s" -Component "Main"
+                }
+            }
+            'Failed'  { 
+                $failed++ 
+                Write-Log -Message "File conversion failed" -Level ERROR -Context "File: $($result.File); Error: $($result.Error)" -Component "Main"
+            }
+            'Skipped' { 
+                $skipped++ 
+                Write-Log -Message "File skipped" -Level INFO -Context "File: $($result.File)" -Component "Main"
+            }
+            'DryRun'  { 
+                $skipped++ 
+                Write-Log -Message "File dry-run" -Level INFO -Context "File: $($result.File)" -Component "Main"
+            }
         }
     }
 
     $elapsed = (Get-Date) - $Script:StartTime
+    $totalDurationSec = [math]::Round($elapsed.TotalSeconds, 1)
+    $avgPerFile = if ($total -gt 0) { [math]::Round($totalDurationSec / $total, 1) } else { 0 }
 
     Write-Host ""
     Write-Host "========================================"
@@ -912,10 +975,11 @@ try {
     Write-Host "Failed    : $failed"
     Write-Host "Skipped   : $skipped"
     Write-Host "Elapsed   : $($elapsed.ToString())"
+    Write-Host "Avg/file  : ${avgPerFile}s"
     Write-Host "========================================"
     Write-Host ""
 
-    Write-Log -Message "Processing completed" -Level INFO -Context "Total: $total; Success: $success; Failed: $failed; Skipped: $skipped; Elapsed: $($elapsed.ToString())" -Component "Main"
+    Write-Log -Message "Processing completed" -Level INFO -Context "Total: $total; Success: $success; Failed: $failed; Skipped: $skipped; ElapsedSeconds: $totalDurationSec; AvgPerFileSeconds: $avgPerFile; Source: $sourceDirectory" -Component "Main"
 
     exit 0
 }
